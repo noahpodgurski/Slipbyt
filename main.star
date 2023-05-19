@@ -212,81 +212,10 @@ COLORS = {
     ]
 }
 
-FETCHED = {"data": {
-    "getUser": None,
-    "getConnectCode": {
-        "user": {
-            "fbUid": "58O6OLvnNATzBq7wupk1o5dVKIu1",
-            "displayName": "GoobyDoob",
-            "connectCode": {
-                "code": "GOOB#854",
-                "__typename": "ConnectCode"
-            },
-            "status": "ACTIVE",
-            "activeSubscription": {
-                "level": "NONE",
-                "hasGiftSub": False,
-                "__typename": "SubscriptionResult"
-            },
-            "rankedNetplayProfile": {
-                "id": "0x3e699b",
-                "ratingOrdinal": 1508.393198,
-                "ratingUpdateCount": 64,
-                "wins": 33,
-                "losses": 31,
-                "dailyGlobalPlacement": None,
-                "dailyRegionalPlacement": None,
-                "continent": "NORTH_AMERICA",
-                "characters": [
-                    {
-                        "id": "0x3e773d",
-                        "character": "DR_MARIO",
-                        "gameCount": 50,
-                        "__typename": "CharacterUsage"
-                    },
-                    {
-                        "id": "0x3ec8c6",
-                        "character": "MARTH",
-                        "gameCount": 60,
-                        "__typename": "CharacterUsage"
-                    },
-                    {
-                        "id": "0x42612c",
-                        "character": "JIGGLYPUFF",
-                        "gameCount": 21,
-                        "__typename": "CharacterUsage"
-                    },
-                    {
-                        "id": "0x4286d6",
-                        "character": "FOX",
-                        "gameCount": 1,
-                        "__typename": "CharacterUsage"
-                    },
-                    {
-                        "id": "0x4290af",
-                        "character": "PEACH",
-                        "gameCount": 12,
-                        "__typename": "CharacterUsage"
-                    },
-                    {
-                        "id": "0x452671",
-                        "character": "SHEIK",
-                        "gameCount": 10,
-                        "__typename": "CharacterUsage"
-                    }
-                ],
-                "__typename": "NetplayProfile"
-            },
-            "__typename": "User"
-        },
-        "__typename": "ConnectCode"
-    }
-}}
-
 RANKS = [
     {
-        "name": "Master 3",
-        "max": 3000,
+        "name": "GM",
+        "max": 9999,
         "min": 2350
     },
     {
@@ -398,6 +327,7 @@ RANK_IMGS = {
   "Master 1": "https://melee-icons.s3.amazonaws.com/ranks/rank_Master_I.0ce2459fedf9e33ebee0cb3520a17e2f.png",
   "Master 2": "https://melee-icons.s3.amazonaws.com/ranks/rank_Master_II.c0b5472d49d391d2063d8e2a19c9ea17.png",
   "Master 3": "https://melee-icons.s3.amazonaws.com/ranks/rank_Master_III.5075fd077bf77bfa6c59985252e0cb04.png",
+  "GM": "https://melee-icons.s3.amazonaws.com/ranks/rank_Grandmaster.0f3bc5674e8ec76f17514f197242c4fa.png"
 }
 
 def getRank(elo):
@@ -406,7 +336,6 @@ def getRank(elo):
             return rank["name"]
 
 # URL = "https://chart-slp-server.herokuapp.com/api/matches?code=GOOB-854"
-statsUrl = "https://chart-slp-server.herokuapp.com/api/matches?code=FIZZI-36"
 RANK_URL = "https://gql-gateway-dot-slippi.uc.r.appspot.com/graphql"
 BTC_ICON = base64.decode("""
 iVBORw0KGgoAAAANSUhEUgAAABEAAAARCAYAAAA7bUf6AAAAlklEQVQ4T2NkwAH+H2T/jy7FaP+
@@ -421,7 +350,13 @@ def getHours(timeString):
             return int(timeString[:i])
     return 0
 
-def requestStats():
+def getUserCodeDashIndex(userCode):
+    for i in range(len(userCode)):
+        if userCode[i] == "#" or userCode[i] == "-":
+            return i
+
+def requestStats(userCodeDash):
+    statsUrl = "https://chart-slp-server.herokuapp.com/api/matches?code=%s" % userCodeDash
     res = http.get(statsUrl)
     if res.status_code != 200:
         fail("request failed with status %d", res.status_code)
@@ -449,25 +384,30 @@ def requestRank(userCode):
     res = res.json()
     return res
 
-def main():
-    userCode = "FIZZI#36"
+def main(config):
+    userCode = config.str("userCode")
+    # userCode = "hbox-305"
+    if userCode == None:
+        fail("No userCode configured")
+    userCode = userCode.upper()
+    userCodeDashIndex = getUserCodeDashIndex(userCode)
+    userCodeHash = userCode[:userCodeDashIndex] + "#" + userCode[userCodeDashIndex+1:]
+    userCodeDash = userCode[:userCodeDashIndex] + "-" + userCode[userCodeDashIndex+1:]
     rankedData = cache.get("rankedData")
     statsData = cache.get("statsData")
-    print('----------')
     if rankedData != None:
-        print("Cached - Displaying cached rankedData.")
+        # print("Cached - Displaying cached rankedData.")
         rankedData = json.decode(rankedData)
     else:
-        print("No data available - Calling slippi API.")
-        rankedData = requestRank(userCode)
-        # rankedData = FETCHED
+        # print("No data available - Calling slippi API.")
+        rankedData = requestRank(userCodeHash)
 
     if statsData != None:
-        print("Cached - Displaying cached statsData.")
+        # print("Cached - Displaying cached statsData.")
         statsData = json.decode(statsData)
     else:
-        print("No data available - Calling chartslp API.")
-        statsData = requestStats()
+        # print("No data available - Calling chartslp API.")
+        statsData = requestStats(userCodeDash)
     
     if rankedData["data"]["getConnectCode"]["user"]["displayName"]:
         elo = rankedData["data"]["getConnectCode"]["user"]["rankedNetplayProfile"]["ratingOrdinal"]
@@ -478,17 +418,15 @@ def main():
         fail("Ranked data did not respond correctly")
 
     if statsData["winrate"]:
-        winrate = statsData["winrate"]
+        # winrate = statsData["winrate"]
+        kills = statsData["kills"]
         main = CHARS[statsData["main"]]
         color = int(statsData["mainColor"])
         mainColor = COLORS[statsData["main"]][color]
         totalMatches = statsData["totalMatches"]
         hours = statsData["totalTime"]
-        print(main, mainColor)
-        print(winrate)
         st = "https://melee-icons.s3.amazonaws.com/%s/%s.png" % (main, mainColor)
         hours = getHours(hours)
-        print(hours)
         statsImg = http.get(st).body()
     else:
         fail("Stats data did not respond correctly")
@@ -500,30 +438,20 @@ def main():
           child=render.Stack(
             children= [
               animation.Transformation(
+                delay=100, # show for 100 frames
                 keyframes = [
                   animation.Keyframe(
                     percentage = 0.0,
                     transforms = [animation.Translate(0, 0)],
                     curve = "ease_in_out"
                   ),
-                  # wait .3 (delay)
-                  animation.Keyframe(
-                    percentage = 0.3,
-                    transforms = [animation.Translate(0, 0)],
-                    curve = "ease_in_out"
-                  ),
-                  animation.Keyframe(
-                    percentage = 0.5,
-                    transforms = [animation.Translate(-100, 0)],
-                    curve = "ease_in_out"
-                  ),
                   animation.Keyframe(
                     percentage = 1.0,
-                    transforms = [animation.Translate(-100, 0)],
+                    transforms = [animation.Translate(-64, 0)],
                     curve = "ease_in_out"
                   )
                 ],
-                duration = 200,
+                duration = 50, #animation takes 50 frames
                 child= render.Row(
                   expanded=True,
                   main_align="space_evenly",
@@ -543,35 +471,30 @@ def main():
                 ),
               ),
               animation.Transformation(
+                delay=100, #begin with above animation start
                 keyframes = [
                   animation.Keyframe(
                     percentage = 0.0,
-                    transforms = [animation.Translate(100, 0)],
+                    transforms = [animation.Translate(64, 0)],
                     curve = "ease_in_out"
                   ),
                   animation.Keyframe(
-                    percentage = 0.3,
-                    transforms = [animation.Translate(100, 0)],
-                    curve = "ease_in_out"
-                  ),
-                  animation.Keyframe(
-                    percentage = 0.5,
+                    percentage = 0.25, #@150
                     transforms = [animation.Translate(0, 0)],
                     curve = "ease_in_out"
                   ),
-                  # wait .3
                   animation.Keyframe(
-                    percentage = 0.8,
+                    percentage = 0.75, #show for 100 frames, then begin animation
                     transforms = [animation.Translate(0, 0)],
                     curve = "ease_in_out"
                   ),
                   animation.Keyframe(
                     percentage = 1.0,
-                    transforms = [animation.Translate(-100, 0)],
+                    transforms = [animation.Translate(-64, 0)],
                     curve = "ease_in_out"
                   )
                 ],
-                duration = 200,
+                duration = 200, #4 times as long to split evenly
                 child= render.Row(
                   expanded=True,
                   main_align="space_evenly",
@@ -582,25 +505,20 @@ def main():
                         expanded=True,
                         main_align="center",
                         children = [
-                          # render.WrappedText("%d gs \n %d wr \n %d hrs" % (totalMatches, winrate, hours))
                           render.Text("%d gs" % totalMatches),
-                          render.Text("%d wr" % winrate),
                           render.Text("%d hrs" % hours),
+                          render.Text("%d kills" % kills),
                         ]
                       )
                   ],
                 ),
               ),
               animation.Transformation(
+                delay=250, #begin at 250
                 keyframes = [
                   animation.Keyframe(
                     percentage = 0.0,
-                    transforms = [animation.Translate(100, 0)],
-                    curve = "ease_in_out"
-                  ),
-                  animation.Keyframe(
-                    percentage = 0.8,
-                    transforms = [animation.Translate(100, 0)],
+                    transforms = [animation.Translate(64, 0)],
                     curve = "ease_in_out"
                   ),
                   animation.Keyframe(
@@ -609,7 +527,7 @@ def main():
                     curve = "ease_in_out"
                   )
                 ],
-                duration = 200,
+                duration = 50,
                 child= render.Row(
                   expanded=True,
                   main_align="space_evenly",
