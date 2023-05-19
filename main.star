@@ -4,6 +4,8 @@ load("encoding/base64.star", "base64")
 load("encoding/json.star", "json")
 load("cache.star", "cache")
 load("animation.star", "animation")
+load("math.star", "math")
+load("random.star", "random")
 
 CHARS = {
   0: "Captain Falcon",
@@ -384,11 +386,77 @@ def requestRank(userCode):
     res = res.json()
     return res
 
+showStrings = ["showGames", "showWinrate", "showHours", "showKills", "showNeutralWinrate", "showBeneficialTraderate", "showFirstBloodrate", "showFourstocks"]
+
+def pickThreeRandom(arr):
+    if len(arr) <= 3:
+        return arr
+
+    random_elements = []
+    seen_indices = []
+
+    for i in range(9999): #while loops don't exist in starlark?? booooo!
+        random_index = random.number(0, len(arr) - 1)
+        if random_index not in seen_indices:
+            seen_indices.append(random_index)
+            random_elements.append(arr[random_index])
+        
+            if len(random_elements) == 3:
+                break
+
+    return random_elements
+
+
+REFRESH_TIME = 43200 # twice a day
 def main(config):
     userCode = config.str("userCode")
+    showGames = config.bool("showGames")
+    showWinrate = config.bool("showWinrate")
+    showHours = config.bool("showHours")
+    showKills = config.bool("showKills")
+    showNeutralWinrate = config.bool("showNeutralWinrate")
+    showBeneficialTraderate = config.bool("showBeneficialTraderate")
+    showFirstBloodrate = config.bool("showFirstBloodrate")
+    showFourstocks = config.bool("showFourstocks")
     # userCode = "hbox-305"
+    # showGames = True
+    # showWinrate = True
+    # showHours = False
+    # showKills = False
+    # showNeutralWinrate = False
+    # showBeneficialTraderate = False
+    # showFirstBloodrate = False
+    # showFourstocks = False
     if userCode == None:
         fail("No userCode configured")
+
+    showRandom = False
+    showArray = []
+    if showGames:
+        showArray.append("showGames")
+    if showWinrate:
+        showArray.append("showWinrate")
+    if showHours:
+        showArray.append("showHours")
+    if showKills:
+        showArray.append("showKills")
+    if showNeutralWinrate:
+        showArray.append("showNeutralWinrate")
+    if showBeneficialTraderate:
+        showArray.append("showBeneficialTraderate")
+    if showFirstBloodrate:
+        showArray.append("showFirstBloodrate")
+    if showFourstocks:
+        showArray.append("showFourstocks")
+
+    if len(showArray) == 0 or showRandom:
+        showRandom = True # if none are configured, show random
+        #add 3 random
+        for i in range(3):
+            showArray = pickThreeRandom(showStrings)
+    elif len(showArray) > 3:
+        fail("Too many configurations, please only pick 3")
+
     userCode = userCode.upper()
     userCodeDashIndex = getUserCodeDashIndex(userCode)
     userCodeHash = userCode[:userCodeDashIndex] + "#" + userCode[userCodeDashIndex+1:]
@@ -401,6 +469,7 @@ def main(config):
     else:
         # print("No data available - Calling slippi API.")
         rankedData = requestRank(userCodeHash)
+        cache.set("rankedData", json.encode(rankedData), ttl_seconds=REFRESH_TIME)
 
     if statsData != None:
         # print("Cached - Displaying cached statsData.")
@@ -408,6 +477,7 @@ def main(config):
     else:
         # print("No data available - Calling chartslp API.")
         statsData = requestStats(userCodeDash)
+        cache.set("statsData", json.encode(statsData), ttl_seconds=REFRESH_TIME)
     
     if rankedData["data"]["getConnectCode"]["user"]["displayName"]:
         elo = rankedData["data"]["getConnectCode"]["user"]["rankedNetplayProfile"]["ratingOrdinal"]
@@ -418,21 +488,54 @@ def main(config):
         fail("Ranked data did not respond correctly")
 
     if statsData["winrate"]:
-        # winrate = statsData["winrate"]
+        games = statsData["totalMatches"]
+        winrate = statsData["winrate"]
+        hours = getHours(statsData["totalTime"])
         kills = statsData["kills"]
+        if statsData["neutralWins"] + statsData["oppNeutralWins"] == 0:
+            neutralWinrate = 0
+        else:
+            neutralWinrate = int(math.round(float(statsData["neutralWins"]) / (statsData["neutralWins"] + statsData["oppNeutralWins"]) * 100))
+        
+        if statsData["beneficialTrades"] + statsData["oppBeneficialTrades"] == 0:
+            beneficialTraderate = 0
+        else:
+            beneficialTraderate = int(math.round(float(statsData["beneficialTrades"]) / (statsData["beneficialTrades"] + statsData["oppBeneficialTrades"]) * 100))
+        
+        if statsData["firstBloods"] + statsData["oppFirstBloods"] == 0:
+            firstBloodrate = 0
+        else:
+            firstBloodrate = int(math.round(float(statsData["firstBloods"]) / (statsData["firstBloods"] + statsData["oppFirstBloods"]) * 100))
+
+        fourStocks = statsData["fourStocks"]
         main = CHARS[statsData["main"]]
         color = int(statsData["mainColor"])
         mainColor = COLORS[statsData["main"]][color]
-        totalMatches = statsData["totalMatches"]
-        hours = statsData["totalTime"]
         st = "https://melee-icons.s3.amazonaws.com/%s/%s.png" % (main, mainColor)
-        hours = getHours(hours)
         statsImg = http.get(st).body()
+
+        lines = ["", "", ""]
+        for i in range(len(showArray)):
+            if showArray[i] == "showGames":
+                lines[i] = "%d gs" % games
+            elif showArray[i] == "showWinrate":
+                lines[i] = "%d wr" % winrate
+            elif showArray[i] == "showHours":
+                lines[i] = "%d hrs" % hours
+            elif showArray[i] == "showKills":
+                lines[i] = "%d kills" % kills
+            elif showArray[i] == "showNeutralWinrate":
+                lines[i] = "%d nwr" % neutralWinrate
+            elif showArray[i] == "showBeneficialTraderate":
+                lines[i] = "%d btr" % beneficialTraderate
+            elif showArray[i] == "showFirstBloodrate":
+                lines[i] = "%d fbr" % firstBloodrate
+            elif showArray[i] == "showFourstocks":
+                lines[i] = "%d 4st" % fourStocks
+
     else:
         fail("Stats data did not respond correctly")
 
-    cache.set("rankedData", json.encode(rankedData), ttl_seconds=1800)
-    cache.set("statsData", json.encode(statsData), ttl_seconds=1800)
 
     return render.Root(
           child=render.Stack(
@@ -500,16 +603,16 @@ def main(config):
                   main_align="space_evenly",
                   cross_align="center",
                   children = [
-                      render.Image(src=statsImg, width=18, height=18),
                       render.Column(
                         expanded=True,
                         main_align="center",
                         children = [
-                          render.Text("%d gs" % totalMatches),
-                          render.Text("%d hrs" % hours),
-                          render.Text("%d kills" % kills),
+                          render.Text(lines[0]),
+                          render.Text(lines[1]),
+                          render.Text(lines[2]),
                         ]
-                      )
+                      ),
+                      render.Image(src=statsImg, width=18, height=18)
                   ],
                 ),
               ),
